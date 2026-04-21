@@ -1,0 +1,35 @@
+[project]
+name = "mm-crypt-cli"
+version = "0.0.1"
+description = "CLI and TUI editor for mm-crypt (encrypted text file editing, shell encrypt/decrypt)"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "mcbarinov" }]
+keywords = ["cli", "tui", "editor", "cryptography", "encryption"]
+classifiers = [
+    "Topic :: Security :: Cryptography",
+    "Topic :: Text Editors",
+    "Topic :: Utilities",
+]
+requires-python = ">=3.14"
+dependencies = [
+    "mm-crypt~=0.0.1",
+    "mm-clikit~=0.2.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mcbarinov/mm-crypt"
+Repository = "https://github.com/mcbarinov/mm-crypt"
+
+[project.scripts]
+mm-crypt = "mm_crypt_cli.cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+exclude = ["tests/", "tmp/"]
+
+[tool.uv.sources]
+mm-crypt = { workspace = true }
