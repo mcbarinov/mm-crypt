@@ -1,8 +1,8 @@
 """Tests for mm_crypt.fernet."""
 
 import pytest
-from cryptography.fernet import InvalidToken
 from mm_crypt import fernet
+from mm_crypt.errors import DecryptionError, InvalidInputError
 
 
 class TestGenerateKey:
@@ -80,15 +80,20 @@ class TestDecrypt:
     def test_wrong_key(self):
         """A token encrypted with one key cannot be decrypted with another."""
         token = fernet.encrypt(data="secret", key=fernet.generate_key())
-        with pytest.raises(InvalidToken):
+        with pytest.raises(DecryptionError, match="wrong key or corrupted data"):
             fernet.decrypt(token=token, key=fernet.generate_key())
 
     def test_malformed_token(self):
-        """A garbage string is rejected as an invalid token."""
-        with pytest.raises(InvalidToken):
+        """A garbage string is rejected as a failed decryption (Fernet collapses format and auth)."""
+        with pytest.raises(DecryptionError, match="wrong key or corrupted data"):
             fernet.decrypt(token="not-a-real-token", key=fernet.generate_key())
 
-    def test_invalid_key(self):
-        """An ill-formed key raises ValueError before decryption."""
-        with pytest.raises(ValueError):
+    def test_invalid_key_on_decrypt(self):
+        """An ill-formed key raises InvalidInputError before decryption runs."""
+        with pytest.raises(InvalidInputError, match="Invalid Fernet key"):
             fernet.decrypt(token="anything", key="not-a-real-key")
+
+    def test_invalid_key_on_encrypt(self):
+        """An ill-formed key on encrypt also raises InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="Invalid Fernet key"):
+            fernet.encrypt(data="anything", key="not-a-real-key")

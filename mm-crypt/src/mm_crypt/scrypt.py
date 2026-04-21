@@ -23,6 +23,7 @@ Source: https://github.com/Tarsnap/scrypt
 """
 
 import base64
+import binascii
 import hashlib
 import hmac
 import secrets
@@ -31,6 +32,8 @@ import textwrap
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+
+from mm_crypt.errors import DecryptionError, InvalidInputError
 
 MAGIC: bytes = b"scrypt"  # 6-byte file signature
 VERSION: int = 0  # Current (and only) format version
@@ -73,7 +76,12 @@ def encrypt_bytes(
     r: int = DEFAULT_R,
     p: int = DEFAULT_P,
 ) -> bytes:
-    """Encrypt raw bytes; return a scrypt(1)-format blob (header + ciphertext + MAC)."""
+    """Encrypt raw bytes; return a scrypt(1)-format blob (header + ciphertext + MAC).
+
+    Raises:
+        InvalidInputError: `log_n`, `r`, or `p` is outside the supported range.
+
+    """
     _check_kdf_params(log_n, r, p)
     salt = secrets.token_bytes(SALT_SIZE)
     header_prefix = _HEADER_PREFIX_STRUCT.pack(MAGIC, VERSION, log_n, r, p, salt)
@@ -91,9 +99,16 @@ def encrypt_bytes(
 
 
 def decrypt_bytes(*, data: bytes, password: str) -> bytes:
-    """Decrypt a scrypt(1)-format blob (as produced by `encrypt_bytes` or `scrypt enc`)."""
+    """Decrypt a scrypt(1)-format blob (as produced by `encrypt_bytes` or `scrypt enc`).
+
+    Raises:
+        InvalidInputError: `data` is truncated, lacks the scrypt magic header, has an
+            unsupported version, or fails the header checksum.
+        DecryptionError: wrong password or the file has been tampered with.
+
+    """
     if len(data) < HEADER_SIZE + FILE_MAC_SIZE:
-        raise ValueError("Invalid format: truncated scrypt file")
+        raise InvalidInputError("Invalid format: truncated scrypt file")
 
     header_prefix = data[:HEADER_PREFIX_SIZE]
     header_checksum = data[HEADER_PREFIX_SIZE : HEADER_PREFIX_SIZE + HEADER_CHECKSUM_SIZE]
@@ -103,30 +118,30 @@ def decrypt_bytes(*, data: bytes, password: str) -> bytes:
 
     magic, version, log_n, r, p, salt = _HEADER_PREFIX_STRUCT.unpack(header_prefix)
     if magic != MAGIC:
-        raise ValueError("Invalid format: missing scrypt magic header")
+        raise InvalidInputError("Invalid format: missing scrypt magic header")
     if version != VERSION:
-        raise ValueError(f"Invalid format: unsupported scrypt version {version}")
+        raise InvalidInputError(f"Invalid format: unsupported scrypt version {version}")
 
     # Cheap integrity check — catches random corruption without running scrypt.
     expected_checksum = hashlib.sha256(header_prefix).digest()[:HEADER_CHECKSUM_SIZE]
     if not hmac.compare_digest(expected_checksum, header_checksum):
-        raise ValueError("Invalid format: scrypt header checksum mismatch")
+        raise InvalidInputError("Invalid format: scrypt header checksum mismatch")
 
     # KDF params + scrypt + MACs share one error path: wrong password, tampering,
     # and out-of-range KDF params all collapse into the same failure.
     try:
         _check_kdf_params(log_n, r, p)
         aes_key, hmac_key = _derive_keys(password, salt, log_n, r, p)
-    except (ValueError, MemoryError, OverflowError) as exc:
-        raise ValueError("Decryption failed: wrong password or corrupted data") from exc
+    except (InvalidInputError, ValueError, MemoryError, OverflowError) as exc:
+        raise DecryptionError("Decryption failed: wrong password or corrupted data") from exc
 
     expected_header_mac = hmac.new(hmac_key, header_prefix + header_checksum, hashlib.sha256).digest()
     if not hmac.compare_digest(expected_header_mac, header_mac):
-        raise ValueError("Decryption failed: wrong password or corrupted data")
+        raise DecryptionError("Decryption failed: wrong password or corrupted data")
 
     expected_file_mac = hmac.new(hmac_key, data[:-FILE_MAC_SIZE], hashlib.sha256).digest()
     if not hmac.compare_digest(expected_file_mac, file_mac):
-        raise ValueError("Decryption failed: wrong password or corrupted data")
+        raise DecryptionError("Decryption failed: wrong password or corrupted data")
 
     # Authenticate-before-decrypt: AES runs only after both MACs pass.
     cipher = Cipher(algorithms.AES(aes_key), modes.CTR(b"\x00" * AES_IV_SIZE)).decryptor()
@@ -141,17 +156,29 @@ def encrypt_base64(
     r: int = DEFAULT_R,
     p: int = DEFAULT_P,
 ) -> str:
-    """Encrypt a UTF-8 string; return base64 wrapped at 64 chars."""
+    """Encrypt a UTF-8 string; return base64 wrapped at 64 chars.
+
+    Raises:
+        InvalidInputError: `log_n`, `r`, or `p` is outside the supported range.
+
+    """
     raw = encrypt_bytes(data=data.encode("utf-8"), password=password, log_n=log_n, r=r, p=p)
     return textwrap.fill(base64.b64encode(raw).decode("ascii"), width=64)
 
 
 def decrypt_base64(*, data: str, password: str) -> str:
-    """Decode base64 (whitespace tolerated) and decrypt to a UTF-8 string."""
+    """Decode base64 (whitespace tolerated) and decrypt to a UTF-8 string.
+
+    Raises:
+        InvalidInputError: `data` isn't valid base64, or the decoded blob is malformed
+            (truncated, wrong magic, unsupported version, bad header checksum).
+        DecryptionError: wrong password or the file has been tampered with.
+
+    """
     try:
         raw = base64.b64decode("".join(data.split()))
-    except Exception as exc:
-        raise ValueError("Invalid base64 format") from exc
+    except binascii.Error as exc:
+        raise InvalidInputError("Invalid base64 format") from exc
     return decrypt_bytes(data=raw, password=password).decode("utf-8")
 
 
@@ -164,8 +191,8 @@ def _derive_keys(password: str, salt: bytes, log_n: int, r: int, p: int) -> tupl
 def _check_kdf_params(log_n: int, r: int, p: int) -> None:
     """Reject KDF params outside the documented caps."""
     if not MIN_LOG_N <= log_n <= MAX_LOG_N:
-        raise ValueError(f"log_n must be in [{MIN_LOG_N}, {MAX_LOG_N}]: got {log_n}")
+        raise InvalidInputError(f"log_n must be in [{MIN_LOG_N}, {MAX_LOG_N}]: got {log_n}")
     if not MIN_R <= r <= MAX_R:
-        raise ValueError(f"r must be in [{MIN_R}, {MAX_R}]: got {r}")
+        raise InvalidInputError(f"r must be in [{MIN_R}, {MAX_R}]: got {r}")
     if not MIN_P <= p <= MAX_P:
-        raise ValueError(f"p must be in [{MIN_P}, {MAX_P}]: got {p}")
+        raise InvalidInputError(f"p must be in [{MIN_P}, {MAX_P}]: got {p}")

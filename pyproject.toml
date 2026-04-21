@@ -39,7 +39,6 @@ ignore = [
     "EM",      # flake8-errmsg
     "TRY003",  # tryceratops: raise-vanilla-args
     "C901",    # mccabe: complex-structure,
-    "BLE001",  # flake8-blind-except
     "S311",    # bandit: suspicious-non-cryptographic-random-usage
     "TD002",   # flake8-todos: missing-todo-author
     "TD003",   # flake8-todos: missing-todo-link

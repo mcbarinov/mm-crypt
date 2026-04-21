@@ -10,12 +10,15 @@ CLI round-trip examples:
 """
 
 import base64
+import binascii
 import secrets
 import textwrap
 from hashlib import pbkdf2_hmac
 
 from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
+from mm_crypt.errors import DecryptionError, InvalidInputError
 
 MAGIC_HEADER: bytes = b"Salted__"  # OpenSSL's fixed preamble marking a salted file
 SALT_SIZE: int = 8  # OpenSSL's salt length
@@ -51,9 +54,15 @@ def encrypt_bytes(*, data: bytes, password: str) -> bytes:
 
 
 def decrypt_bytes(*, data: bytes, password: str) -> bytes:
-    """Decrypt OpenSSL-format bytes (as produced by `encrypt_bytes`)."""
+    """Decrypt OpenSSL-format bytes (as produced by `encrypt_bytes`).
+
+    Raises:
+        InvalidInputError: `data` does not start with the OpenSSL `Salted__` magic header.
+        DecryptionError: wrong password or the ciphertext was tampered with.
+
+    """
     if not data.startswith(MAGIC_HEADER):
-        raise ValueError("Invalid format: missing OpenSSL salt header")
+        raise InvalidInputError("Invalid format: missing OpenSSL salt header")
 
     header_len = len(MAGIC_HEADER)
     salt = data[header_len : header_len + SALT_SIZE]
@@ -67,7 +76,7 @@ def decrypt_bytes(*, data: bytes, password: str) -> bytes:
         unpadder = padding.PKCS7(BLOCK_SIZE * 8).unpadder()
         return unpadder.update(padded) + unpadder.finalize()
     except ValueError as exc:
-        raise ValueError("Decryption failed: wrong password or corrupted data") from exc
+        raise DecryptionError("Decryption failed: wrong password or corrupted data") from exc
 
 
 def encrypt_base64(*, data: str, password: str) -> str:
@@ -77,9 +86,15 @@ def encrypt_base64(*, data: str, password: str) -> str:
 
 
 def decrypt_base64(*, data: str, password: str) -> str:
-    """Decode base64 (whitespace tolerated) and decrypt to a UTF-8 string."""
+    """Decode base64 (whitespace tolerated) and decrypt to a UTF-8 string.
+
+    Raises:
+        InvalidInputError: `data` isn't valid base64, or the decoded blob lacks the OpenSSL header.
+        DecryptionError: wrong password or the ciphertext was tampered with.
+
+    """
     try:
         raw = base64.b64decode("".join(data.split()))
-    except Exception as exc:
-        raise ValueError("Invalid base64 format") from exc
+    except binascii.Error as exc:
+        raise InvalidInputError("Invalid base64 format") from exc
     return decrypt_bytes(data=raw, password=password).decode("utf-8")

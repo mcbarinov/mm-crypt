@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 from mm_crypt import openssl_aes256cbc as alg
+from mm_crypt.errors import DecryptionError, InvalidInputError
 
 
 def _cli_args(*extra: str, password: str) -> list[str]:
@@ -153,46 +154,46 @@ class TestBase64WhitespaceTolerance:
 
 
 class TestDecryptErrors:
-    """Failure modes surface as ValueError with specific messages."""
+    """Failure modes surface as typed errors with specific messages."""
 
     def test_wrong_password_bytes(self):
-        """Wrong password on raw token raises."""
+        """Wrong password on raw token raises DecryptionError."""
         tok = alg.encrypt_bytes(data=b"secret", password="right")
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_bytes(data=tok, password="wrong")
 
     def test_wrong_password_base64(self):
-        """Wrong password on base64 token raises."""
+        """Wrong password on base64 token raises DecryptionError."""
         tok = alg.encrypt_base64(data="secret", password="right")
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_base64(data=tok, password="wrong")
 
     def test_missing_magic_header_bytes(self):
-        """Raw input without `Salted__` prefix is rejected as the wrong format."""
-        with pytest.raises(ValueError, match="missing OpenSSL salt header"):
+        """Raw input without `Salted__` prefix is rejected as InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="missing OpenSSL salt header"):
             alg.decrypt_bytes(data=b"not-an-openssl-file", password="pw")
 
     def test_missing_magic_header_base64(self):
-        """Valid base64 that decodes to non-OpenSSL bytes is rejected with the format error."""
+        """Valid base64 decoding to non-OpenSSL bytes is rejected as InvalidInputError."""
         bogus = base64.b64encode(b"not-an-openssl-file").decode("ascii")
-        with pytest.raises(ValueError, match="missing OpenSSL salt header"):
+        with pytest.raises(InvalidInputError, match="missing OpenSSL salt header"):
             alg.decrypt_base64(data=bogus, password="pw")
 
     def test_truncated(self):
-        """Only the magic header, no salt or ciphertext — unpad fails."""
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        """Only the magic header, no salt or ciphertext — unpad fails with DecryptionError."""
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_bytes(data=alg.MAGIC_HEADER, password="pw")
 
     def test_corrupted_ciphertext(self):
         """Flipping the last ciphertext byte breaks decryption."""
         tok = alg.encrypt_bytes(data=b"secret", password="pw")
         corrupted = tok[:-1] + bytes([tok[-1] ^ 0xFF])
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_bytes(data=corrupted, password="pw")
 
     def test_invalid_base64(self):
-        """A string that isn't valid base64 is reported as such."""
-        with pytest.raises(ValueError, match="Invalid base64 format"):
+        """A string that isn't valid base64 is reported as InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="Invalid base64 format"):
             alg.decrypt_base64(data="not valid @@@ base64!", password="pw")
 
 

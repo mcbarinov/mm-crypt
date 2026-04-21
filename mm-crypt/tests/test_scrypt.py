@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 from mm_crypt import scrypt as alg
+from mm_crypt.errors import DecryptionError, InvalidInputError
 
 # Fast but still exercises the real KDF.
 FAST_LOG_N = 10
@@ -158,8 +159,8 @@ class TestKdfParams:
         ],
     )
     def test_out_of_range_rejected_on_encrypt(self, log_n, r, p, field):
-        """Out-of-range KDF params raise ValueError on encrypt."""
-        with pytest.raises(ValueError, match=field):
+        """Out-of-range KDF params raise InvalidInputError on encrypt."""
+        with pytest.raises(InvalidInputError, match=field):
             alg.encrypt_bytes(data=b"x", password="pw", log_n=log_n, r=r, p=p)
 
 
@@ -178,35 +179,35 @@ class TestBase64WhitespaceTolerance:
 
 
 class TestDecryptErrors:
-    """Failure modes surface as ValueError with specific messages."""
+    """Failure modes surface as typed errors with specific messages."""
 
     def test_wrong_password_bytes(self):
-        """Wrong password on raw token raises the auth failure error."""
+        """Wrong password on raw token raises DecryptionError."""
         tok = alg.encrypt_bytes(data=b"secret", password="right", log_n=FAST_LOG_N)
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_bytes(data=tok, password="wrong")
 
     def test_wrong_password_base64(self):
-        """Wrong password on base64 token raises the auth failure error."""
+        """Wrong password on base64 token raises DecryptionError."""
         tok = alg.encrypt_base64(data="secret", password="right", log_n=FAST_LOG_N)
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_base64(data=tok, password="wrong")
 
     def test_missing_magic_header(self):
-        """Input without `scrypt` prefix is rejected as the wrong format."""
-        with pytest.raises(ValueError, match="missing scrypt magic header"):
+        """Input without `scrypt` prefix is rejected as InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="missing scrypt magic header"):
             alg.decrypt_bytes(data=b"notscryptdata" + b"\x00" * 200, password="pw")
 
     def test_unsupported_version(self):
-        """A valid magic header with an unknown version byte is rejected."""
+        """A valid magic header with an unknown version byte is rejected as InvalidInputError."""
         tok = alg.encrypt_bytes(data=b"x", password="pw", log_n=FAST_LOG_N)
         tampered = tok[:6] + bytes([99]) + tok[7:]
-        with pytest.raises(ValueError, match="unsupported scrypt version"):
+        with pytest.raises(InvalidInputError, match="unsupported scrypt version"):
             alg.decrypt_bytes(data=tampered, password="pw")
 
     def test_truncated_file(self):
-        """A blob smaller than the fixed header+MAC overhead is rejected."""
-        with pytest.raises(ValueError, match="truncated scrypt file"):
+        """A blob smaller than the fixed header+MAC overhead is rejected as InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="truncated scrypt file"):
             alg.decrypt_bytes(data=b"scrypt" + b"\x00" * 10, password="pw")
 
     def test_header_checksum_mismatch(self):
@@ -214,7 +215,7 @@ class TestDecryptErrors:
         tok = alg.encrypt_bytes(data=b"x", password="pw", log_n=FAST_LOG_N)
         # Byte 16 is the first salt byte — corrupting it breaks header_checksum.
         tampered = tok[:16] + bytes([tok[16] ^ 0xFF]) + tok[17:]
-        with pytest.raises(ValueError, match="scrypt header checksum mismatch"):
+        with pytest.raises(InvalidInputError, match="scrypt header checksum mismatch"):
             alg.decrypt_bytes(data=tampered, password="pw")
 
     def test_corrupted_ciphertext(self):
@@ -223,12 +224,12 @@ class TestDecryptErrors:
         # Middle-of-ciphertext byte: past HEADER_SIZE, before FILE_MAC_SIZE.
         idx = alg.HEADER_SIZE + 2
         tampered = tok[:idx] + bytes([tok[idx] ^ 0xFF]) + tok[idx + 1 :]
-        with pytest.raises(ValueError, match="wrong password or corrupted data"):
+        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
             alg.decrypt_bytes(data=tampered, password="pw")
 
     def test_invalid_base64(self):
-        """A string that isn't valid base64 is reported as such."""
-        with pytest.raises(ValueError, match="Invalid base64 format"):
+        """A string that isn't valid base64 is reported as InvalidInputError."""
+        with pytest.raises(InvalidInputError, match="Invalid base64 format"):
             alg.decrypt_base64(data="not valid @@@ base64!", password="pw")
 
 
