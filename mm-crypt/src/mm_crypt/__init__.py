@@ -2,3 +2,4 @@
 
 from . import fernet as fernet
 from . import openssl_aes256cbc as openssl_aes256cbc
+from . import scrypt as scrypt
