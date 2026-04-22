@@ -8,6 +8,8 @@ from mm_crypt_cli.cli.commands.fernet.encrypt import encrypt as fernet_encrypt
 from mm_crypt_cli.cli.commands.fernet.keygen import keygen as fernet_keygen
 from mm_crypt_cli.cli.commands.openssl.decrypt import decrypt as openssl_decrypt
 from mm_crypt_cli.cli.commands.openssl.encrypt import encrypt as openssl_encrypt
+from mm_crypt_cli.cli.commands.scrypt.decrypt import decrypt as scrypt_decrypt
+from mm_crypt_cli.cli.commands.scrypt.encrypt import encrypt as scrypt_encrypt
 from mm_crypt_cli.config import Config
 from mm_crypt_cli.core.core import Core
 
@@ -50,3 +52,26 @@ def _openssl_group() -> None:
 openssl_app.command(name="encrypt", aliases=["e"])(openssl_encrypt)
 openssl_app.command(name="decrypt", aliases=["d"])(openssl_decrypt)
 app.add_typer(openssl_app, name="openssl", aliases=["o"])
+
+scrypt_app = TyperPlus(json_option=False)
+
+
+@scrypt_app.callback()
+def _scrypt_group() -> None:
+    """Tarsnap scrypt(1)-compatible password-based encryption commands.
+
+    Fully interoperable with the upstream `scrypt` CLI binary. Equivalent invocations via `scrypt(1)`:
+
+    encrypt (--binary): scrypt enc -P plain.bin cipher.bin  (password on stdin)
+
+    decrypt (--binary): scrypt dec -P cipher.bin plain.bin  (password on stdin)
+
+    Base64 mode wraps the same binary blob for text pipelines; `scrypt(1)` has no native base64 mode.
+
+    Install the reference CLI: `brew install scrypt` / `apt install scrypt` / `pacman -S scrypt`.
+    """
+
+
+scrypt_app.command(name="encrypt", aliases=["e"])(scrypt_encrypt)
+scrypt_app.command(name="decrypt", aliases=["d"])(scrypt_decrypt)
+app.add_typer(scrypt_app, name="scrypt", aliases=["s"])
