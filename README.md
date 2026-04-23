@@ -34,3 +34,6 @@ just test                # pytest across both packages
 ## Architecture
 
 CLI architecture (layers, context, commands) is described in [docs/cli-architecture.md](./docs/cli-architecture.md). It applies only to `mm-crypt-cli`; the `mm-crypt` library is a flat collection of modules with no Core/Service layering.
+
+The TUI editor (`mm-crypt scrypt edit <path>`) has its own design and security
+model specification: [docs/tui-editor.md](./docs/tui-editor.md).

@@ -15,6 +15,7 @@ requires-python = ">=3.14"
 dependencies = [
     "mm-crypt~=0.0.1",
     "mm-clikit~=0.2.0",
+    "textual>=0.80",
 ]
 
 [project.urls]

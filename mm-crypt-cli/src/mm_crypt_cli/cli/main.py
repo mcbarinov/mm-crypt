@@ -9,6 +9,7 @@ from mm_crypt_cli.cli.commands.fernet.keygen import keygen as fernet_keygen
 from mm_crypt_cli.cli.commands.openssl.decrypt import decrypt as openssl_decrypt
 from mm_crypt_cli.cli.commands.openssl.encrypt import encrypt as openssl_encrypt
 from mm_crypt_cli.cli.commands.scrypt.decrypt import decrypt as scrypt_decrypt
+from mm_crypt_cli.cli.commands.scrypt.edit import edit as scrypt_edit
 from mm_crypt_cli.cli.commands.scrypt.encrypt import encrypt as scrypt_encrypt
 from mm_crypt_cli.config import Config
 from mm_crypt_cli.core.core import Core
@@ -74,4 +75,5 @@ def _scrypt_group() -> None:
 
 scrypt_app.command(name="encrypt", aliases=["e"])(scrypt_encrypt)
 scrypt_app.command(name="decrypt", aliases=["d"])(scrypt_decrypt)
+scrypt_app.command(name="edit")(scrypt_edit)
 app.add_typer(scrypt_app, name="scrypt", aliases=["s"])
