@@ -132,6 +132,13 @@ def app(argv: list[str] | None = None) -> int:
     expects: ``sys.exit(app())`` is how the generated wrapper invokes us.
     """
     parser = _build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+    # Bare `mm-crypt` with no arguments: print full help (same output as `-h`)
+    # instead of argparse's default short usage + exit 2. Matches docker/kubectl feel.
+    if not argv:
+        parser.print_help()
+        return 0
     args = parser.parse_args(argv)
     # ``func`` is installed on the leaf subparser by each command's ``register()``
     # via ``parser.set_defaults(func=_run)`` and retrieved off the resulting Namespace.
