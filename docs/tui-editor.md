@@ -22,14 +22,18 @@ Passwords are read via `getpass` — never accepted on the command line, in an
 environment variable, or from a file. Interactive-only, by design: argv and
 env leak to shell history, `ps`, and process introspection tools.
 
+**Windows is not supported.** The editor uses POSIX `termios`, `fcntl`, and
+`SIGWINCH`; on Windows the `edit` command exits immediately with a clear
+error instead of trying to run.
+
 ---
 
 ## Flow
 
 ### Open
 
-1. Apply runtime hardening (disable core dumps, scrub Textual debug env
-   vars) — done up front, before any sensitive data is in process memory.
+1. Apply runtime hardening (disable core dumps) — done up front, before any
+   sensitive data is in process memory.
 2. Resolve symlinks in `<path>` so the editor operates on the actual
    file. Editing a symlink writes through to the target, matching the
    default behavior of vim and emacs. The symlink itself is never
@@ -56,17 +60,26 @@ env leak to shell history, `ps`, and process introspection tools.
 
 ### Edit
 
-The buffer is a Textual `TextArea` widget. All state — cursor, undo history
-(up to 50 checkpoints), the text itself — lives in memory. Nothing is
-written to disk during editing.
+The buffer is a `TextBuffer` (our own data structure) rendered by
+`TextAreaView` (our own renderer). All state — cursor position, the text
+itself — lives in memory. Nothing is written to disk during editing.
 
 Key bindings:
 
 | Key | Action |
 | --- | --- |
 | `Ctrl+S` | Save (re-encrypt the buffer and replace the file atomically) |
-| `Ctrl+Q` | Quit (prompts if the buffer has unsaved changes) |
-| `Esc` | Cancel the quit-confirmation modal |
+| `Ctrl+Q` / `Ctrl+C` | Quit (prompts inline in the status bar if the buffer has unsaved changes) |
+| Arrow keys, `Home`, `End`, `PageUp`, `PageDown` | Cursor movement |
+| `Enter`, `Tab`, printable characters | Insert (unless `--view`) |
+| `Backspace`, `Delete` | Delete (unless `--view`) |
+
+Bracketed paste is enabled on startup (`CSI ?2004h`); a multi-line paste
+from the system clipboard arrives as one insert operation rather than
+triggering per-line Enter handling.
+
+There is no undo. This is a deliberate simplification — see "Project
+structure" below for the reasoning.
 
 ### Save
 
@@ -94,12 +107,17 @@ A crash at any point produces one of these outcomes:
 ### Quit
 
 - Read-only or unmodified buffer → exit immediately.
-- Modified buffer → modal dialog: Save / Discard / Cancel.
-  - Save: run the save flow above, then exit. If save fails, stay in the
-    editor (the buffer is still modified).
-  - Discard: exit without saving. The plaintext buffer is dropped when the
+- Modified buffer → inline prompt in the status row:
+  `Unsaved changes. Save?  [y]es   [n]o (discard)   [c]ancel`.
+  - `y` / `Y`: run the save flow above, then exit. If save fails, stay in
+    the editor (the buffer is still modified).
+  - `n` / `N`: exit without saving. The plaintext buffer is dropped when the
     process exits.
-  - Cancel / Esc: dismiss the modal, stay in the editor.
+  - `c` / `C` / `Ctrl+C` / `Ctrl+Q`: dismiss the prompt, stay in the editor.
+
+The prompt is a single row of text at the bottom of the screen — no modal
+dialog, no centered window, no button widgets. The editor is a minimal
+screen + one status line.
 
 ---
 
@@ -133,6 +151,18 @@ A crash at any point produces one of these outcomes:
    environment. It is kept in process memory only for the lifetime of the
    editor.
 
+6. **No environment-variable configuration.** The editor's rendering and
+   key handling consult **zero** environment variables. There is no
+   `$TERM` lookup, no terminfo DB access, no debug-log env, no screenshot
+   env. What the user sets in their shell cannot redirect plaintext out of
+   the process through any code we control.
+
+7. **Terminal-escape injection from file contents.** When rendering, every
+   C0 control character (0x00–0x1F) and DEL (0x7F) in the buffer is
+   replaced with caret notation (`^[`, `^A`, `^?`, etc.). A buffer that
+   happens to contain raw ANSI escape bytes cannot cause the terminal to
+   execute them.
+
 ### What the editor does NOT guarantee
 
 The following are **residual risks** that a single Python application
@@ -152,53 +182,104 @@ with a plaintext buffer.
    raw memory — including the plaintext buffer. We lower `RLIMIT_CORE` to
    zero at startup (best-effort via `resource.setrlimit`) so the kernel
    will not write a core for our process. A system-wide dump collector
-   (like `systemd-coredump`) may still capture cores if it has higher
-   privileges than we do.
+   (like `systemd-coredump` or macOS `ReportCrash`) may still capture cores
+   if it has higher privileges than we do.
 
-4. **Hostile local attacker.** Any attacker with arbitrary code execution
+4. **Python-level diagnostic env vars.** `PYTHONFAULTHANDLER`,
+   `PYTHONTRACEMALLOC`, and similar can produce diagnostic output on
+   crash. These do not normally contain user buffer content (they dump
+   stack traces and allocation sites, not local string values), but they
+   are a residual surface that a Python-based editor cannot eliminate
+   without sandboxing the interpreter itself.
+
+5. **Hostile local attacker.** Any attacker with arbitrary code execution
    in the user's session (shell, `LD_PRELOAD`, ptrace attach, replaced
    binary, keylogger) can bypass every in-process defense. The editor is
    not hardened against this threat model — nor is any other editor.
 
-### Textual: dependency-specific caveat
+### Why no TUI library
 
-The TUI uses [Textual](https://textual.textualize.io/). Textual reads a few
-environment variables that, when set, cause Textual itself to write to
-disk:
+The editor is written directly on POSIX `termios` and hardcoded ANSI escape
+sequences. We do **not** use Textual, urwid, prompt_toolkit, curses, or any
+other TUI library.
 
-- **`TEXTUAL_LOG=<path>`** — appends all log output (including any
-  `app.log(...)` calls) to `<path>`.
-- **`TEXTUAL_DEBUG=1`** — opens `keys.log` in the current working
-  directory and records every key sequence.
-- **`TEXTUAL_SCREENSHOT=<seconds>`** — on exit, writes an SVG snapshot of
-  the rendered screen — which contains `TextArea` content — to disk.
-- **`TEXTUAL_SCREENSHOT_LOCATION` / `TEXTUAL_SCREENSHOT_FILENAME`** —
-  where the above SVG lands.
+The reason is specific and narrow. TUI libraries accumulate disk-write side
+channels driven by environment variables:
 
-An attacker who can set environment variables for our process (via
-`.envrc`, a modified shell init, `env FOO=bar mm-crypt …`, etc.) could
-redirect plaintext to disk without modifying our code. **As a defense in
-depth, we delete all five variables from `os.environ` before launching the
-Textual app.** Our scrub takes effect in our own process only — it does
-not alter the user's shell. If these variables are set persistently in a
-shell init file, we still scrub them at start; but we cannot prevent a
-user from setting them and then running our binary from that same shell:
-Textual sees our scrubbed environment, but anyone also running Textual
-from that shell for other purposes will not be protected.
+- Textual reads `TEXTUAL_LOG`, `TEXTUAL_DEBUG`, `TEXTUAL_SCREENSHOT`,
+  `TEXTUAL_SCREENSHOT_LOCATION`, `TEXTUAL_SCREENSHOT_FILENAME` — any of
+  which can redirect rendered buffer contents (including `TextArea` text)
+  to a file on disk without modifying our code.
+- ncurses reads `NCURSES_TRACE`, which opens a `trace` file in CWD and
+  writes every input/output byte to it.
+- urwid has had configurable debug log paths over its history.
 
-### Future work: replace Textual
+A defense that scrubs these variables before launch is a **blocklist**. A
+blocklist is not durable: the next upstream release of the library may add
+a new variable we do not know about, and a user whose shell environment
+sets it will have buffer content routed to disk without any warning. Our
+own code audit does not help — the write happens inside the library.
 
-Textual is a large dependency with a broad feature surface (logging,
-screenshots, devtools, serve-to-web). Every new Textual version may add a
-new way for buffer content to reach disk or the network. Long term, the
-plan is to **replace Textual with a minimal hand-rolled TUI** that does
-nothing except paint a buffer and handle key input — no logging, no
-screenshots, no devtools, no external servers. That reduces this entire
-attack surface to a few hundred lines of our own code.
+Writing the TUI ourselves moves the property from "blocklist of
+known-dangerous env vars, hopefully complete" to "the class is empty".
+Our code consults no environment variables for rendering or key handling.
+There is no terminfo lookup; the sequences we emit (alt-screen,
+bracketed-paste, cursor move, clear-line, reverse-video) are hardcoded
+xterm/VT100 constants that every modern terminal emulator implements
+(iTerm2, Terminal.app, Alacritty, kitty, Ghostty, gnome-terminal, konsole,
+tmux, screen).
 
-This is deliberately out of scope for the current implementation; the
-Textual-based editor ships first, and the replacement will be a separate
-effort once the broader editor design is stable.
+The cost is modest — a hand-rolled terminal layer is a few hundred lines
+split across five files (see "Project structure"). None of the failure
+modes of a self-rolled TUI are in the same risk class as "buffer content
+silently written to disk": rendering bugs produce visible glitches, not
+leaks; in-memory buffer bugs produce data-integrity issues, not leaks.
+The Python interpreter is memory-safe, so there is no buffer-overflow
+surface to worry about.
+
+One honest caveat: our upstream CLI framework (`mm-clikit`) still has
+`textual` as a transitive dependency for its own TUI helper modules
+(`mm_clikit.tui.*`). We do not import those; Textual is never loaded into
+our editor's process. But it may still appear in `uv.lock`. The security
+guarantee applies to runtime behavior, not to the package list.
+
+---
+
+## Project structure
+
+The editor does not follow the `tui/app.py + tui/screens/` layout from
+[cli-architecture.md](./cli-architecture.md) — that shape is Textual-oriented.
+Instead, `mm-crypt-cli/src/mm_crypt_cli/tui/` is split by role:
+
+| Module | Role |
+| --- | --- |
+| `terminal.py` | Raw-mode I/O: `termios` setup, alt-screen, bracketed paste, SIGWINCH self-pipe, cursor/clear ANSI helpers. |
+| `keys.py` | Incremental byte-stream → `KeyEvent` parser. Handles CSI/SS3 sequences and bracketed paste framing. |
+| `buffer.py` | `TextBuffer`: multi-line text + cursor. Pure data structure, no rendering. |
+| `view.py` | `TextAreaView`: draws a `TextBuffer` into a viewport with horizontal scroll, wide-char width handling, and caret notation for controls. |
+| `editor.py` | `EditorApp`: wires the above, owns path/password, runs the event loop, implements Ctrl+S and the inline quit prompt. |
+| `coredump.py` | `disable_core_dumps()`: best-effort `RLIMIT_CORE` = 0. |
+
+The dependency direction is strict: `editor` → `view` → `buffer` + `keys` +
+`terminal`. The lower modules have no knowledge of scrypt, file paths, or
+passwords — they are reusable primitives. The app-specific concerns live
+only in `editor.py`.
+
+Deliberate omissions from the hand-rolled layer, vs. a full editor:
+
+- **No undo history.** The editor works on small text notes; making undo
+  correct under paste, newlines, and line joins is non-trivial code that
+  would not earn its weight.
+- **No soft-wrap.** Long lines scroll horizontally. Simpler logic, fewer
+  moving parts around cursor positioning and wide characters.
+- **No selection or clipboard integration.** Paste from the system
+  clipboard is handled by bracketed paste; copy-out is deliberately not
+  implemented (OSC 52 would be an additional disk/network-adjacent side
+  channel).
+- **No mouse.** Keyboard only.
+
+Each omission was evaluated against both "do users need this?" and "does
+this add a leak vector?". When in doubt, we left it out.
 
 ---
 
@@ -253,10 +334,17 @@ through a world-readable location longer than necessary.
 ## Related files
 
 - `mm-crypt-cli/src/mm_crypt_cli/cli/commands/scrypt/edit.py` — the `edit`
-  subcommand: path + password resolution, then hands off to the TUI.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/app.py` — `EditorApp`, `QuitConfirm`,
-  and `_write_encrypted` (the atomic save helper).
-- `mm-crypt-cli/src/mm_crypt_cli/tui/hardening.py` — env-var scrub +
-  core-dump disable; called once, immediately before `App.run()`.
+  subcommand: Windows gate, core-dump disable, path + password resolution,
+  then hands off to the TUI.
+- `mm-crypt-cli/src/mm_crypt_cli/tui/terminal.py` — raw-mode terminal
+  session (termios, alt-screen, SIGWINCH, ANSI helpers).
+- `mm-crypt-cli/src/mm_crypt_cli/tui/keys.py` — byte-stream → `KeyEvent`
+  parser.
+- `mm-crypt-cli/src/mm_crypt_cli/tui/buffer.py` — `TextBuffer` data
+  structure.
+- `mm-crypt-cli/src/mm_crypt_cli/tui/view.py` — `TextAreaView` renderer.
+- `mm-crypt-cli/src/mm_crypt_cli/tui/editor.py` — `EditorApp` and the
+  `_write_encrypted` atomic-save helper.
+- `mm-crypt-cli/src/mm_crypt_cli/tui/coredump.py` — `disable_core_dumps()`.
 - `mm-crypt/src/mm_crypt/scrypt.py` — the scrypt(1)-compatible format
   implementation that both the CLI and the TUI use.

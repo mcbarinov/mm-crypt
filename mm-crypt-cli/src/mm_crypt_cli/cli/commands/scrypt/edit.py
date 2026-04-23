@@ -1,5 +1,6 @@
 """Open the TUI editor on a scrypt-encrypted text file."""
 
+import sys
 from getpass import getpass
 from pathlib import Path
 from typing import Annotated
@@ -8,9 +9,6 @@ import typer
 from mm_clikit import CliError
 from mm_crypt import scrypt
 from mm_crypt.errors import DecryptionError, InvalidInputError
-
-from mm_crypt_cli.tui.app import EditorApp
-from mm_crypt_cli.tui.hardening import apply_hardening
 
 
 def edit(
@@ -24,11 +22,21 @@ def edit(
     buffer; nothing is written to disk until the first Ctrl+S save.
 
     The password is never accepted via CLI flag or environment variable — the TUI
-    is an interactive tool, and argv/env leak to shell history and `ps`.
+    is an interactive tool, and argv/env leak to shell history and ``ps``.
     """
-    # Harden first: disables core dumps and scrubs Textual env vars before we
-    # put sensitive data (password, decrypted plaintext) into process memory.
-    apply_hardening()
+    # Windows is not supported: the editor relies on POSIX termios, fcntl, and SIGWINCH.
+    # The platform check runs before the tui imports so that loading this module
+    # (and thus the whole CLI) still succeeds on Windows for unrelated commands.
+    if sys.platform == "win32":
+        raise CliError("The TUI editor is not supported on Windows.", "UNSUPPORTED_PLATFORM")
+    # Imports deferred past the platform gate because `coredump` imports `resource`
+    # and `editor` transitively imports `termios`/`tty`/`fcntl` — all POSIX-only.
+    from mm_crypt_cli.tui.coredump import disable_core_dumps  # noqa: PLC0415
+    from mm_crypt_cli.tui.editor import EditorApp  # noqa: PLC0415
+
+    # Disable core dumps before any sensitive data (password, decrypted plaintext)
+    # enters process memory. See docs/tui-editor.md for the full security model.
+    disable_core_dumps()
     # Follow symlinks so we write through to the real file instead of replacing
     # the symlink itself (matches vim/emacs default "write-through" behavior).
     path = path.resolve()

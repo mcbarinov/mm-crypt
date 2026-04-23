@@ -431,14 +431,12 @@ source = { editable = "mm-crypt-cli" }
 dependencies = [
     { name = "mm-clikit" },
     { name = "mm-crypt" },
-    { name = "textual" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "mm-clikit", specifier = "~=0.2.0" },
     { name = "mm-crypt", editable = "mm-crypt" },
-    { name = "textual", specifier = ">=0.80" },
 ]
 
 [[package]]
