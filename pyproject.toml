@@ -20,8 +20,6 @@ addopts = "--import-mode=importlib"
 python_version = "3.14"
 strict = true
 exclude = ["^tests/", "^tmp/"]
-plugins = ["pydantic.mypy"]
-disable_error_code = ["prop-decorator"]
 
 [tool.ruff]
 line-length = 130
@@ -57,7 +55,7 @@ ignore = [
 classmethod-decorators = ["field_validator"]
 
 [tool.ruff.lint.per-file-ignores]
-"**/tests/**/*.py" = ["ANN", "S"]
+"**/tests/**/*.py" = ["ANN", "S", "A002"]
 
 [tool.ruff.format]
 quote-style = "double"

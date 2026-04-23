@@ -1,6 +1,6 @@
 # TUI Editor
 
-`mm-crypt scrypt edit <path>` opens a scrypt-encrypted text file in a
+`mm-crypt editor <path>` opens a scrypt-encrypted text file in a
 terminal editor, lets you edit it in memory, and writes the edits back as a
 fresh scrypt blob on Ctrl+S. The on-disk format is a plain `scrypt(1)`
 container — fully interoperable with `mm-crypt scrypt encrypt` / `decrypt`
@@ -15,15 +15,15 @@ properties it provides**, so a future reader can audit both quickly.
 
 | Command | Behavior |
 | --- | --- |
-| `mm-crypt scrypt edit <path>` | Open existing file, or create on first save if missing. Prompts for password once (existing) or twice with confirmation (new). |
-| `mm-crypt scrypt edit <path> --view` / `-V` | Open read-only. Requires the file to exist. Save is disabled; buffer cannot be modified. |
+| `mm-crypt editor <path>` | Open existing file, or create on first save if missing. Prompts for password once (existing) or twice with confirmation (new). |
+| `mm-crypt editor <path> --view` / `-V` | Open read-only. Requires the file to exist. Save is disabled; buffer cannot be modified. |
 
 Passwords are read via `getpass` — never accepted on the command line, in an
 environment variable, or from a file. Interactive-only, by design: argv and
 env leak to shell history, `ps`, and process introspection tools.
 
 **Windows is not supported.** The editor uses POSIX `termios`, `fcntl`, and
-`SIGWINCH`; on Windows the `edit` command exits immediately with a clear
+`SIGWINCH`; on Windows the `editor` command exits immediately with a clear
 error instead of trying to run.
 
 ---
@@ -237,19 +237,17 @@ leaks; in-memory buffer bugs produce data-integrity issues, not leaks.
 The Python interpreter is memory-safe, so there is no buffer-overflow
 surface to worry about.
 
-One honest caveat: our upstream CLI framework (`mm-clikit`) still has
-`textual` as a transitive dependency for its own TUI helper modules
-(`mm_clikit.tui.*`). We do not import those; Textual is never loaded into
-our editor's process. But it may still appear in `uv.lock`. The security
-guarantee applies to runtime behavior, not to the package list.
+As of the argparse migration, `mm-crypt-cli` no longer depends on
+`mm-clikit` (or typer, click, textual, rich, markdown-it, pydantic). The
+only runtime dependency is `mm-crypt`, which in turn depends only on
+`cryptography`. Textual is not in `uv.lock`; the security property now
+holds at both runtime and package-list level.
 
 ---
 
 ## Project structure
 
-The editor does not follow the `tui/app.py + tui/screens/` layout from
-[cli-architecture.md](./cli-architecture.md) — that shape is Textual-oriented.
-Instead, `mm-crypt-cli/src/mm_crypt_cli/tui/` is split by role:
+`mm-crypt-cli/src/mm_crypt_cli/simpletui/` is split by role:
 
 | Module | Role |
 | --- | --- |
@@ -333,18 +331,18 @@ through a world-readable location longer than necessary.
 
 ## Related files
 
-- `mm-crypt-cli/src/mm_crypt_cli/cli/commands/scrypt/edit.py` — the `edit`
-  subcommand: Windows gate, core-dump disable, path + password resolution,
-  then hands off to the TUI.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/terminal.py` — raw-mode terminal
+- `mm-crypt-cli/src/mm_crypt_cli/commands/editor.py` — the `editor`
+  top-level command: Windows gate, core-dump disable, path + password
+  resolution, then hands off to the TUI.
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/terminal.py` — raw-mode terminal
   session (termios, alt-screen, SIGWINCH, ANSI helpers).
-- `mm-crypt-cli/src/mm_crypt_cli/tui/keys.py` — byte-stream → `KeyEvent`
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/keys.py` — byte-stream → `KeyEvent`
   parser.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/buffer.py` — `TextBuffer` data
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/buffer.py` — `TextBuffer` data
   structure.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/view.py` — `TextAreaView` renderer.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/editor.py` — `EditorApp` and the
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/view.py` — `TextAreaView` renderer.
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/editor.py` — `EditorApp` and the
   `_write_encrypted` atomic-save helper.
-- `mm-crypt-cli/src/mm_crypt_cli/tui/coredump.py` — `disable_core_dumps()`.
+- `mm-crypt-cli/src/mm_crypt_cli/simpletui/coredump.py` — `disable_core_dumps()`.
 - `mm-crypt/src/mm_crypt/scrypt.py` — the scrypt(1)-compatible format
   implementation that both the CLI and the TUI use.
