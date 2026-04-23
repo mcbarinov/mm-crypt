@@ -2,8 +2,9 @@ set dotenv-load
 
 clean:
     rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage
-    rm -rf mm-crypt/dist mm-crypt/build mm-crypt/src/*.egg-info
-    rm -rf mm-crypt-cli/dist mm-crypt-cli/build mm-crypt-cli/src/*.egg-info
+    rm -rf dist
+    rm -rf mm-crypt/build mm-crypt/src/*.egg-info
+    rm -rf mm-crypt-cli/build mm-crypt-cli/src/*.egg-info
 
 format:
     uv run ruff check --select I --fix mm-crypt mm-crypt-cli
@@ -27,6 +28,12 @@ build-lib: clean lint audit test
 
 build-cli: clean lint audit test
     cd mm-crypt-cli && uv build
+
+publish-lib: build-lib
+    uv publish dist/mm_crypt-*.whl dist/mm_crypt-*.tar.gz
+
+publish-cli: build-cli
+    uv publish dist/mm_crypt_cli-*.whl dist/mm_crypt_cli-*.tar.gz
 
 sync:
     uv sync
