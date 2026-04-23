@@ -17,5 +17,5 @@ Module layout (one-way dependency: editor → view → buffer/keys/terminal):
 - ``editor``    the app: wires everything + save flow + quit confirm.
 - ``coredump``  ``RLIMIT_CORE`` = 0 best-effort defense in depth.
 
-See ``docs/tui-editor.md`` for the full design and threat model.
+See ``mm-crypt-cli/docs/tui-editor.md`` for the full design and threat model.
 """

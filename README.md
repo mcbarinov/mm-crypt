@@ -21,19 +21,8 @@ uv tool install mm-crypt-cli
 
 The CLI package depends on the library; the library does **not** depend on any CLI tooling, so library consumers get a clean dependency graph with only `cryptography`.
 
-## Development
 
-This repo is a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/). Both packages share a single virtual environment, lockfile, and dev tool configuration.
+## Documentation
 
-```bash
-uv sync                  # install both packages in editable mode
-just lint                # ruff + mypy across both packages
-just test                # pytest across both packages
-```
-
-## Architecture
-
-CLI architecture (layers, context, commands) is described in [docs/cli-architecture.md](./docs/cli-architecture.md). It applies only to `mm-crypt-cli`; the `mm-crypt` library is a flat collection of modules with no Core/Service layering.
-
-The TUI editor (`mm-crypt editor <path>`) has its own design and security
-model specification: [docs/tui-editor.md](./docs/tui-editor.md).
+- [`mm-crypt-cli/README.md`](./mm-crypt-cli/README.md) — full CLI reference: command tree, secret-source flags, round-trip examples per group.
+- [`mm-crypt-cli/docs/tui-editor.md`](./mm-crypt-cli/docs/tui-editor.md) — TUI editor design and security model (flow, atomic save, threat model).

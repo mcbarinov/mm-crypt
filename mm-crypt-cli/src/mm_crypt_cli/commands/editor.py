@@ -45,7 +45,7 @@ def _run(args: argparse.Namespace) -> None:
     from mm_crypt_cli.simpletui.editor import EditorApp  # noqa: PLC0415
 
     # Disable core dumps before any sensitive data (password, decrypted plaintext)
-    # enters process memory. See docs/tui-editor.md for the full security model.
+    # enters process memory. See mm-crypt-cli/docs/tui-editor.md for the full security model.
     disable_core_dumps()
     # Follow symlinks so we write through to the real file instead of replacing
     # the symlink itself (matches vim/emacs default "write-through" behavior).

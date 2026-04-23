@@ -8,7 +8,7 @@ core file for our process.
 Best-effort: a host with hardened ``setrlimit`` policy may reject the call,
 and a system-wide dump collector with elevated privileges (``systemd-coredump``,
 macOS ``ReportCrash``) can still capture cores regardless of our limit. See
-``docs/tui-editor.md`` for the full residual-risk discussion.
+``mm-crypt-cli/docs/tui-editor.md`` for the full residual-risk discussion.
 """
 
 import contextlib

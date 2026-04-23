@@ -12,7 +12,7 @@ prompt in the status row (modified buffer).
 
 Security: plaintext never touches disk via this module. ``_write_encrypted``
 encrypts in memory first; the tmp file only ever holds ciphertext. See
-``docs/tui-editor.md`` for the full save-flow and threat model.
+``mm-crypt-cli/docs/tui-editor.md`` for the full save-flow and threat model.
 """
 
 import contextlib

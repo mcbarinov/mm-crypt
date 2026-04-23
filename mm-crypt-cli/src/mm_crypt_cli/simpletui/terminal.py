@@ -10,7 +10,7 @@ Every byte we write to the terminal is a hardcoded xterm/VT100 control
 sequence that every modern terminal emulator (iTerm2, Terminal.app, Alacritty,
 kitty, Ghostty, gnome-terminal, konsole, tmux, screen) implements.
 
-Security rationale: see ``docs/tui-editor.md`` — we avoid every TUI library /
+Security rationale: see ``mm-crypt-cli/docs/tui-editor.md`` — we avoid every TUI library /
 terminal-DB dependency specifically to eliminate the class of "env var causes
 library to write buffer content to disk" risks.
 """
