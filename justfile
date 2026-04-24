@@ -1,5 +1,8 @@
 set dotenv-load
 
+lib_version := `grep -m1 '^version *=' mm-crypt/pyproject.toml | cut -d'"' -f2`
+cli_version := `grep -m1 '^version *=' mm-crypt-cli/pyproject.toml | cut -d'"' -f2`
+
 clean:
     rm -rf .pytest_cache .mypy_cache .ruff_cache .coverage
     rm -rf dist
@@ -18,7 +21,7 @@ test:
     uv run pytest -n auto mm-crypt/tests mm-crypt-cli/tests
 
 audit:
-    uv export --no-dev --format requirements-txt --no-emit-project > requirements.txt
+    uv export --no-dev --format requirements-txt --no-emit-project --no-emit-workspace > requirements.txt
     uv run pip-audit -r requirements.txt --disable-pip
     rm requirements.txt
     uv run bandit --silent --recursive --configfile "pyproject.toml" mm-crypt/src mm-crypt-cli/src
@@ -30,10 +33,16 @@ build-cli: clean lint audit test
     cd mm-crypt-cli && uv build
 
 publish-lib: build-lib
+    git diff-index --quiet HEAD
     uv publish dist/mm_crypt-*.whl dist/mm_crypt-*.tar.gz
+    git tag -a 'mm-crypt-v{{lib_version}}' -m 'mm-crypt-v{{lib_version}}'
+    git push origin 'mm-crypt-v{{lib_version}}'
 
 publish-cli: build-cli
+    git diff-index --quiet HEAD
     uv publish dist/mm_crypt_cli-*.whl dist/mm_crypt_cli-*.tar.gz
+    git tag -a 'mm-crypt-cli-v{{cli_version}}' -m 'mm-crypt-cli-v{{cli_version}}'
+    git push origin 'mm-crypt-cli-v{{cli_version}}'
 
 sync:
     uv sync
