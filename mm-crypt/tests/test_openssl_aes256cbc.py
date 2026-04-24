@@ -157,16 +157,36 @@ class TestDecryptErrors:
     """Failure modes surface as typed errors with specific messages."""
 
     def test_wrong_password_bytes(self):
-        """Wrong password on raw token raises DecryptionError."""
+        """Wrong password surfaces as DecryptionError.
+
+        openssl-enc AES-256-CBC has no MAC, so detection relies on PKCS7 padding
+        invalidity (~99.6% of wrong passwords trigger it). Five tries drops the
+        all-silent false-pass probability to ~10^-12.
+        """
         tok = alg.encrypt_bytes(data=b"secret", password="right")
-        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
-            alg.decrypt_bytes(data=tok, password="wrong")
+        for i in range(5):
+            try:
+                alg.decrypt_bytes(data=tok, password=f"wrong-{i}")
+            except DecryptionError as exc:
+                assert "wrong password or corrupted data" in str(exc)
+                return
+        pytest.fail("5 wrong passwords all silently decrypted - padding check broken?")
 
     def test_wrong_password_base64(self):
-        """Wrong password on base64 token raises DecryptionError."""
+        """Wrong password through the base64 path surfaces as DecryptionError.
+
+        Same probabilistic nature as test_wrong_password_bytes; the base64 path
+        additionally may hit UnicodeDecodeError if PKCS7 validates on garbage
+        bytes. Five tries cover both failure modes.
+        """
         tok = alg.encrypt_base64(data="secret", password="right")
-        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
-            alg.decrypt_base64(data=tok, password="wrong")
+        for i in range(5):
+            try:
+                alg.decrypt_base64(data=tok, password=f"wrong-{i}")
+            except DecryptionError as exc:
+                assert "wrong password or corrupted data" in str(exc)
+                return
+        pytest.fail("5 wrong passwords all silently decrypted - padding check broken?")
 
     def test_missing_magic_header_bytes(self):
         """Raw input without `Salted__` prefix is rejected as InvalidInputError."""
@@ -185,11 +205,21 @@ class TestDecryptErrors:
             alg.decrypt_bytes(data=alg.MAGIC_HEADER, password="pw")
 
     def test_corrupted_ciphertext(self):
-        """Flipping the last ciphertext byte breaks decryption."""
+        """Flipping the last ciphertext byte breaks decryption.
+
+        PKCS7 padding detection is probabilistic (see test_wrong_password_bytes);
+        iterate over five different XOR masks so false-pass probability drops
+        from ~0.4% to ~10^-12.
+        """
         tok = alg.encrypt_bytes(data=b"secret", password="pw")
-        corrupted = tok[:-1] + bytes([tok[-1] ^ 0xFF])
-        with pytest.raises(DecryptionError, match="wrong password or corrupted data"):
-            alg.decrypt_bytes(data=corrupted, password="pw")
+        for xor_mask in (0xFF, 0x01, 0x7F, 0x42, 0x80):
+            corrupted = tok[:-1] + bytes([tok[-1] ^ xor_mask])
+            try:
+                alg.decrypt_bytes(data=corrupted, password="pw")
+            except DecryptionError as exc:
+                assert "wrong password or corrupted data" in str(exc)
+                return
+        pytest.fail("5 byte flips all silently decrypted - padding check broken?")
 
     def test_invalid_base64(self):
         """A string that isn't valid base64 is reported as InvalidInputError."""

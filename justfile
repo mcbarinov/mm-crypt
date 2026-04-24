@@ -33,14 +33,24 @@ build-cli: clean lint audit test
     cd mm-crypt-cli && uv build
 
 publish-lib: build-lib
+    #!/usr/bin/env bash
+    set -euo pipefail
     git diff-index --quiet HEAD
-    uv publish dist/mm_crypt-*.whl dist/mm_crypt-*.tar.gz
+    printf "PyPI token: " >&2
+    IFS= read -rs TOKEN
+    echo >&2
+    uv publish --token "$TOKEN" dist/mm_crypt-*.whl dist/mm_crypt-*.tar.gz
     git tag -a 'mm-crypt-v{{lib_version}}' -m 'mm-crypt-v{{lib_version}}'
     git push origin 'mm-crypt-v{{lib_version}}'
 
 publish-cli: build-cli
+    #!/usr/bin/env bash
+    set -euo pipefail
     git diff-index --quiet HEAD
-    uv publish dist/mm_crypt_cli-*.whl dist/mm_crypt_cli-*.tar.gz
+    printf "PyPI token: " >&2
+    IFS= read -rs TOKEN
+    echo >&2
+    uv publish --token "$TOKEN" dist/mm_crypt_cli-*.whl dist/mm_crypt_cli-*.tar.gz
     git tag -a 'mm-crypt-cli-v{{cli_version}}' -m 'mm-crypt-cli-v{{cli_version}}'
     git push origin 'mm-crypt-cli-v{{cli_version}}'
 
